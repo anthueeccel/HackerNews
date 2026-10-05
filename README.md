@@ -60,6 +60,68 @@ it is excluded from the default offline test run and is executed as a separate s
 
 All options are validated at startup; invalid values fail fast.
 
+## Project structure
+
+```text
+HackerNews/
+├── .clinerules/                          # Engineering rules, spec/review workflows, AI prompts
+│   ├── 01-engineering-rules.md
+│   ├── ai-prompt.md
+│   ├── README.md
+│   ├── review.md
+│   └── spec.md
+├── .github/
+│   └── workflows/
+│       ├── build-test.yml                # CI: restore, build, test on push/PR
+│       └── e2e-tests.yml                 # End-to-end test workflow
+├── docs/
+│   └── ai-prompt.md                      # "How this was built" note
+├── specs/
+│   └── 001-best-stories-api/
+│       ├── spec.md                       # What and why (source of truth)
+│       ├── plan.md                       # How, plus task checklist
+│       └── review.md                     # Review workflow output
+├── src/
+│   └── HackerNews.BestStories.Api/
+│       ├── Clients/
+│       │   ├── IHackerNewsClient.cs      # Upstream HN API abstraction
+│       │   └── HackerNewsClient.cs       # Typed client via IHttpClientFactory
+│       ├── Endpoints/
+│       │   └── StoriesEndpoints.cs       # MapStoriesEndpoints extension (Minimal API)
+│       ├── Infrastructure/
+│       │   └── SingleFlightCache.cs      # In-memory cache with single-flight + TTLs
+│       ├── Models/
+│       │   ├── HackerNewsItem.cs         # Upstream item model
+│       │   └── StoryResponse.cs          # Public DTO (record)
+│       ├── Options/
+│       │   ├── HackerNewsOptions.cs      # Base address, timeout
+│       │   └── StoriesOptions.cs         # Max n, parallelism, cache TTLs
+│       ├── Properties/
+│       │   └── launchSettings.json
+│       ├── Services/
+│       │   ├── IBestStoriesService.cs
+│       │   └── BestStoriesService.cs     # Fetch, filter, sort by score desc
+│       ├── Program.cs                    # Thin composition root
+│       ├── appsettings.json
+│       ├── appsettings.Development.json
+│       └── HackerNews.BestStories.Api.csproj
+├── tests/
+│   └── HackerNews.BestStories.Api.Tests/
+│       ├── Support/
+│       │   ├── FakeHackerNewsClient.cs   # Unit-test fake
+│       │   └── FakeHttpMessageHandler.cs # Integration-test HTTP fake
+│       ├── BestStoriesServiceTests.cs    # Unit tests (T-1 … T-7)
+│       ├── StoriesEndpointIntegrationTests.cs
+│       ├── BestStoriesE2ETests.cs
+│       └── HackerNews.BestStories.Api.Tests.csproj
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
+├── HackerNews.slnx
+├── LICENSE
+└── README.md
+```
+
 ## Design decisions
 
 - **Single project** (`src/HackerNews.BestStories.Api`) plus one test project. For a service this small, project separation adds ceremony without value; separation of concerns is expressed with folders and interfaces (`Clients/`, `Services/`, `Endpoints/`, `Models/`, `Options/`). In a larger system it would split into Domain/Application/Infrastructure projects.
