@@ -1,3 +1,5 @@
+![.Net](http://img.shields.io/badge/-v10.0-008999?style=plastic&logo=.net&logoColor=ffffff) [![Build](https://github.com/anthueeccel/HackerNews/actions/workflows/dotnet.yml/badge.svg)](https://github.com/anthueeccel/HackerNews/actions/workflows/dotnet.yml) [![E2E Tests](https://github.com/anthueeccel/HackerNews/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/anthueeccel/HackerNews/actions/workflows/e2e-tests.yml) ![last_commit](https://img.shields.io/github/last-commit/anthueeccel/HackerNews) ![license](https://img.shields.io/github/license/anthueeccel/HackerNews)
+
 # HackerNews Best Stories API
 
 A RESTful API built with ASP.NET Core (Minimal API, .NET 10) that returns the details of the best `n` Hacker News stories, ordered by score descending. It protects the upstream [Hacker News API](https://github.com/HackerNews/API) from load with in-memory caching, single-flight request coalescing, and bounded parallelism.
@@ -21,33 +23,40 @@ Example response (HTTP 200):
 ]
 ```
 
-| Status | Meaning |
-| ------ | ------- |
-| 200 | Success, JSON array ordered by score descending |
-| 400 | `n` missing, not a number, `< 1` or above the configured maximum (`ProblemDetails`) |
-| 502 / 503 | Upstream unreachable / timed out (`ProblemDetails`, no internal details leaked) |
+| Status    | Meaning                                                                             |
+| --------- | ----------------------------------------------------------------------------------- |
+| 200       | Success, JSON array ordered by score descending                                     |
+| 400       | `n` missing, not a number, `< 1` or above the configured maximum (`ProblemDetails`) |
+| 502 / 503 | Upstream unreachable / timed out (`ProblemDetails`, no internal details leaked)     |
 
 There is also a health check at `GET /health`, and an OpenAPI document at `/openapi/v1.json` in Development.
 
 ## How to run
 
+**Prerequisites:** [.NET 10 SDK](https://dotnet.microsoft.com/download) (and Docker, optional).
+The API listens on `http://localhost:5149` (see the console output of `dotnet run`; in Docker it is `http://localhost:8080`).
+
 ```bash
 dotnet run --project src/HackerNews.BestStories.Api   # run
 dotnet test                                           # tests (NUnit)
+dotnet test --filter "FullyQualifiedName~BestStoriesE2ETests"   # E2E test (real Hacker News API)
 docker build -t hackernews-api .                      # Docker
 docker run -p 8080:8080 hackernews-api
 ```
 
+The E2E test (`BestStoriesE2ETests`) is the only test that calls the real Hacker News API over the network;
+it is excluded from the default offline test run and is executed as a separate step in CI (a failure fails the build).
+
 ## Configuration
 
-| Key | Default | Description |
-| --- | ------- | ----------- |
-| `HackerNews:BaseAddress` | `https://hacker-news.firebaseio.com/v0/` | Hacker News API base address |
-| `HackerNews:TimeoutSeconds` | `5` | Upstream HTTP timeout |
-| `Stories:MaxCount` | `200` | Maximum allowed `n` |
-| `Stories:Parallelism` | `10` | Max concurrent upstream item fetches |
-| `Stories:IdListTtlSeconds` | `120` | Cache TTL for the best-story ID list |
-| `Stories:ItemTtlSeconds` | `600` | Cache TTL for each story item |
+| Key                         | Default                                  | Description                          |
+| --------------------------- | ---------------------------------------- | ------------------------------------ |
+| `HackerNews:BaseAddress`    | `https://hacker-news.firebaseio.com/v0/` | Hacker News API base address         |
+| `HackerNews:TimeoutSeconds` | `5`                                      | Upstream HTTP timeout                |
+| `Stories:MaxCount`          | `200`                                    | Maximum allowed `n`                  |
+| `Stories:Parallelism`       | `10`                                     | Max concurrent upstream item fetches |
+| `Stories:IdListTtlSeconds`  | `120`                                    | Cache TTL for the best-story ID list |
+| `Stories:ItemTtlSeconds`    | `600`                                    | Cache TTL for each story item        |
 
 All options are validated at startup; invalid values fail fast.
 
