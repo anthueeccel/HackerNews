@@ -1,0 +1,20 @@
+name: E2E-Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore
+      - run: dotnet build --no-restore
+      - run: dotnet test --no-build --filter "FullyQualifiedName!~BestStoriesE2ETests" --verbosity normal
+      - name: Run E2E tests (real Hacker News API)
+        run: dotnet test --no-build --filter "FullyQualifiedName~BestStoriesE2ETests" --verbosity normal
