@@ -44,3 +44,6 @@ app.MapStoriesEndpoints();
 
 app.Run();
 
+// Makes the implicit Program class visible to the test project (WebApplicationFactory).
+public partial class Program;
+
