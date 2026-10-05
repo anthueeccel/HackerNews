@@ -90,12 +90,12 @@ Integration (`StoriesEndpointIntegrationTests`): T-8 200 happy path JSON shape &
 
 ## Task checklist
 
-- [ ] 1. Scaffold solution and projects; copy spec.md; write plan.md
-- [ ] 2. Options and models
-- [ ] 3. HackerNewsClient
-- [ ] 4. Single-flight cache and BestStoriesService
-- [ ] 5. Endpoints, health checks, OpenAPI
-- [ ] 6. Unit tests (T-1…T-7)
-- [ ] 7. Integration tests (T-8…T-11)
-- [ ] 8. Delivery artifacts (Dockerfile, .dockerignore, CI, docs/ai-prompt.md)
-- [ ] 9. README rewrite; final green build + tests
+- [x] 1. Scaffold solution and projects; copy spec.md; write plan.md
+- [x] 2. Options and models
+- [x] 3. HackerNewsClient
+- [x] 4. Single-flight cache and BestStoriesService
+- [x] 5. Endpoints, health checks, OpenAPI
+- [x] 6. Unit tests (T-1…T-7)
+- [x] 7. Integration tests (T-8…T-11)
+- [x] 8. Delivery artifacts (Dockerfile, .dockerignore, CI, docs/ai-prompt.md)
+- [x] 9. README rewrite; final green build + tests

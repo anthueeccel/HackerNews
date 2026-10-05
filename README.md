@@ -1,1 +1,79 @@
-# HackerNews
+# HackerNews Best Stories API
+
+A RESTful API built with ASP.NET Core (Minimal API, .NET 10) that returns the details of the best `n` Hacker News stories, ordered by score descending. It protects the upstream [Hacker News API](https://github.com/HackerNews/API) from load with in-memory caching, single-flight request coalescing, and bounded parallelism.
+
+## Endpoint
+
+`GET /api/stories/best?n=10`
+
+Example response (HTTP 200):
+
+```json
+[
+  {
+    "title": "A uBlock Origin update was rejected from the Chrome Web Store",
+    "uri": "https://github.com/uBlockOrigin/uBlock-issues/issues/745",
+    "postedBy": "ismaildonmez",
+    "time": "2019-10-12T13:43:01+00:00",
+    "score": 1716,
+    "commentCount": 572
+  }
+]
+```
+
+| Status | Meaning |
+| ------ | ------- |
+| 200 | Success, JSON array ordered by score descending |
+| 400 | `n` missing, not a number, `< 1` or above the configured maximum (`ProblemDetails`) |
+| 502 / 503 | Upstream unreachable / timed out (`ProblemDetails`, no internal details leaked) |
+
+There is also a health check at `GET /health`, and an OpenAPI document at `/openapi/v1.json` in Development.
+
+## How to run
+
+```bash
+dotnet run --project src/HackerNews.BestStories.Api   # run
+dotnet test                                           # tests (NUnit)
+docker build -t hackernews-api .                      # Docker
+docker run -p 8080:8080 hackernews-api
+```
+
+## Configuration
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `HackerNews:BaseAddress` | `https://hacker-news.firebaseio.com/v0/` | Hacker News API base address |
+| `HackerNews:TimeoutSeconds` | `5` | Upstream HTTP timeout |
+| `Stories:MaxCount` | `200` | Maximum allowed `n` |
+| `Stories:Parallelism` | `10` | Max concurrent upstream item fetches |
+| `Stories:IdListTtlSeconds` | `120` | Cache TTL for the best-story ID list |
+| `Stories:ItemTtlSeconds` | `600` | Cache TTL for each story item |
+
+All options are validated at startup; invalid values fail fast.
+
+## Design decisions
+
+- **Single project** (`src/HackerNews.BestStories.Api`) plus one test project. For a service this small, project separation adds ceremony without value; separation of concerns is expressed with folders and interfaces (`Clients/`, `Services/`, `Endpoints/`, `Models/`, `Options/`). In a larger system it would split into Domain/Application/Infrastructure projects.
+- **Caching and single-flight**: a small `SingleFlightCache` (`ConcurrentDictionary` of `Lazy<Task<T>>` entries with absolute expiry). Concurrent requests for the same key share one upstream call; only successfully completed results are kept, so a failed or cancelled upstream call is retried on the next request.
+- **Bounded parallelism**: items are fetched with `Parallel.ForEachAsync` capped by `Stories:Parallelism` — never an unbounded fan-out over all IDs.
+- **TTLs, timeout, max `n` and parallelism are all configuration**, no magic numbers in code.
+- **Typed client** through `IHttpClientFactory` (`HackerNewsClient`), no retry/circuit-breaker library in this version.
+
+## Assumptions
+
+- The first `n` IDs from `beststories` are taken, then the resulting stories are sorted by score descending (not all ~200 IDs are fetched to answer the question).
+- Items that are null, deleted, dead, or not of type `story` are skipped; if fewer than `n` valid stories exist, what is available is returned.
+- `uri` is `null` when the item has no `url` (for example Ask HN posts).
+- An individual failed item fetch fails the whole request (502) rather than silently skipping, so callers get a consistent snapshot or an error.
+
+## Enhancements given more time
+
+Redis or another distributed cache, Polly retries and circuit breaker, rate limiting on this API, background cache refresh (`BackgroundService`), OpenTelemetry metrics and tracing, splitting into Domain/Application/Infrastructure projects, contract tests against the upstream shape, and authentication.
+
+## Testing
+
+Tests use **NUnit** with the constraint model. Unit tests cover the service with a faked `IHackerNewsClient`; integration tests use `WebApplicationFactory` with a fake `HttpMessageHandler` — no real network calls are ever made.
+
+## How this was built
+
+This project was built with AI assistance (Cline in VS Code) using a spec-driven workflow. See [`docs/ai-prompt.md`](docs/ai-prompt.md) and the [`specs/`](specs/001-best-stories-api/spec.md) folder for the spec and plan.
