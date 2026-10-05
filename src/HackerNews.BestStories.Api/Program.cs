@@ -1,41 +1,46 @@
+using HackerNews.BestStories.Api.Clients;
+using HackerNews.BestStories.Api.Endpoints;
+using HackerNews.BestStories.Api.Infrastructure;
+using HackerNews.BestStories.Api.Options;
+using HackerNews.BestStories.Api.Services;
+using Microsoft.Extensions.Options;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
+
+builder.Services
+    .AddOptions<HackerNewsOptions>()
+    .BindConfiguration(HackerNewsOptions.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<StoriesOptions>()
+    .BindConfiguration(StoriesOptions.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient<IHackerNewsClient, HackerNewsClient>((services, httpClient) =>
+{
+    var settings = services.GetRequiredService<IOptions<HackerNewsOptions>>().Value;
+    httpClient.BaseAddress = new Uri(settings.BaseAddress);
+    httpClient.Timeout = settings.Timeout;
+});
+
+builder.Services.AddSingleton<SingleFlightCache>();
+builder.Services.AddScoped<IBestStoriesService, BestStoriesService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapHealthChecks("/health");
+app.MapStoriesEndpoints();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
