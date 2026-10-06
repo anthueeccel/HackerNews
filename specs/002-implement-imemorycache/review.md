@@ -1,72 +1,77 @@
-﻿# Review: 002-implement-imemorycache
+# Review: 002-implement-imemorycache
 
 Date: 2026-10-06
-Verdict: Changes requested
+Verdict: Approved with comments
 
 ## Build and test
 
-- `dotnet build`: succeeded, 0 warnings, 0 errors (.NET 10.0.303, net10.0).
-- `dotnet test`: 17/17 passed, 0 failed, 0 skipped (~5 s).
-- No real network calls in tests: unit tests use `FakeHackerNewsClient`; integration tests use `WebApplicationFactory` with `FakeHttpMessageHandler`.
+- `dotnet build` (`src/HackerNews.BestStories.Api`): succeeded - 0 warnings, 0 errors; .NET 10.0.303 (net10.0).
+- `dotnet test` (`tests/HackerNews.BestStories.Api.Tests`): 18/18 passed, 0 failed, 0 skipped (~5 s).
+- All tests avoid real network: unit tests use `FakeHackerNewsClient`; integration tests use `WebApplicationFactory` with `FakeHttpMessageHandler`.
 
 ## Requirement traceability
 
 | ID | Status | Evidence (code / test) |
 |----|--------|------------------------|
-| NFR-2 | Missing | The main design driver is not implemented: `MemoryCacheOptions.SizeLimit` is never set anywhere in the codebase (repo-wide search for `SizeLimit` / `MemoryCacheOptions` matches only `specs/002` documents). `Program.cs:13` calls `AddMemoryCache()` with no options, so the singleton cache has no entry cap. |
-| NFR-2a | Missing | `IMemoryCache.SizeLimit = StoriesOptions.MaxCacheEntries` (spec line 43) does not exist in code; `MaxCacheEntries` is never read (see FR-7b). |
-| NFR-2b | Covered | `SingleFlightCache.cs:25` (`_inFlight` dictionary), removed in `finally` at lines 53-59; keys are only the fixed `beststories` id-list key (`BestStoriesService.cs:15`) and `item:{id}` keys derived from upstream IDs (`BestStoriesService.cs:60`), so the map cannot exceed the natural key set. |
-| NFR-2c | Covered | `SingleFlightCache.cs:80-84`: `AbsoluteExpirationRelativeToNow = ttl` per entry; TTLs from `StoriesOptions` (`StoriesOptions.cs:15-26`). |
-| NFR-2d | Partial | Spec claims memory-pressure awareness, but per spec line 43 that behaviour is anchored to `SizeLimit`; with `SizeLimit` null the only eviction path that is actually exercised is TTL expiry. Cannot hold as specified until NFR-2a is implemented. |
-| NFR-2e | Covered | `SingleFlightCache.cs:74-92`: `_cache.Set` runs only after `await factory(...)` succeeds; exceptions (including cancellation) propagate from the `Lazy` and nothing is stored. Test T-6 (`BestStoriesServiceTests.cs:132-150`) verifies retry after failure. |
-| NFR-2f | Covered | `SingleFlightCache.cs:70` registers `cancellationToken.Register(() => _inFlight.TryRemove(key, out _))`; registration disposed at line 91. A cancelled caller's key is dropped so a fresh request retries. |
-| FR-5 | Covered | ID list cached under `beststories` with `settings.IdListTtl` (`BestStoriesService.cs:45-55`); default 120 s from config. |
-| FR-6 | Covered | Items cached under `item:{id}` with `settings.ItemTtl` (`BestStoriesService.cs:57-63`); default 600 s from config. |
-| FR-7 | Covered | Both TTLs come from `StoriesOptions` (`StoriesOptions.cs:15-26`), bound with `BindConfiguration` and validated at startup (`Program.cs:21-25`). |
-| FR-7b | Missing | `StoriesOptions.MaxCacheEntries` (`StoriesOptions.cs:22`) and `appsettings.json:18` exist, but no production code ever reads the property (repo-wide search: hits only in `specs/002` and `appsettings.json`). The configurable limit has no effect. |
-| FR-8 | Covered | Single-flight retained on top of `IMemoryCache` (`SingleFlightCache.cs:46-50`). Test T-5 (`BestStoriesServiceTests.cs:112-128`): 20 concurrent requests, exactly 1 upstream call - passes with the real `MemoryCache` created at `BestStoriesServiceTests.cs:32`. |
-| FR-9 | Covered | Faulted/cancelled results are never stored (NFR-2e evidence). Test T-6. |
-| Section 3 (no API change) | Covered | Endpoint untouched; integration tests T-8...T-11 (`StoriesEndpointIntegrationTests.cs`) still pass. |
-| Section 7 (config key) | Partial | Key present in `appsettings.json:18` and `StoriesOptions`, but not applied to `IMemoryCache` and not documented in the README configuration table. |
-| Section 10 (files changed) | Covered | All five listed files are modified; `git status` confirms them (plus the untracked `specs/002-implement-imemorycache/`). |
-| T-5, T-6, T-1...T-7, T-8...T-11 | Covered | Full suite green: 17/17 (`dotnet test`). |
+| NFR-1 (efficient concurrent serving) | Covered | `Stories:Parallelism` limits `Parallel.ForEachAsync` in `BestStoriesService.cs:25-36`; single-flight coalesces concurrent upstream calls. |
+| NFR-2 (singleton cache memory-bounded) | Covered | `Program.cs:13-17`: `SizeLimit = storiesOptions.Value.MaxCacheEntries`; `StoriesOptions.MaxCacheEntries` default 1000 (`StoriesOptions.cs:21-22`); `appsettings.json:18`. |
+| NFR-2a (bounded capacity) | Covered | `MemoryCacheOptions.SizeLimit` set from `IOptions<StoriesOptions>` at startup; zero-risk of unbounded growth. |
+| NFR-2b (bounded in-flight map) | Covered | `_inFlight` keyed by fixed `beststories` and `item:{id}` keys (`SingleFlightCache.cs:25,46`); bounded by the natural ID count. |
+| NFR-2c (TTL enforcement) | Covered | `AbsoluteExpirationRelativeToNow = ttl` per entry (`SingleFlightCache.cs:80-84`); TTLs from `StoriesOptions` (`StoriesOptions.cs:15-19`). |
+| NFR-2d (memory-pressure awareness) | Covered (framework defaults) | `MemoryCache` shrinks via compaction on memory pressure; `CompactionPercentage` defaults to 0.9. NFR-2a bounds the store. |
+| NFR-2e (failure-avoidance preserved) | Covered | `_cache.Set` runs only after `factory(...)` succeeds (`SingleFlightCache.cs:74-93`); faulted/cancelled results never stored. |
+| NFR-2f (cancellation safety) | Covered | `cancellationToken.Register` removes the key from `_inFlight` (`SingleFlightCache.cs:70`); registration disposed in `finally` (`SingleFlightCache.cs:91`). |
+| FR-5 (ID list cache) | Covered | `GetOrAddAsync("beststories", settings.IdListTtl, ...)` (`BestStoriesService.cs:45-55`). |
+| FR-6 (item cache) | Covered | `GetOrAddAsync("item:{id}", settings.ItemTtl, ...)` (`BestStoriesService.cs:57-63`). |
+| FR-7 (configurable TTLs) | Covered | TTLs from `StoriesOptions` bound with `BindConfiguration` + `ValidateOnStart` (`Program.cs:25-29`). |
+| FR-7b (`MaxCacheEntries`) | Covered | `StoriesOptions.MaxCacheEntries` → `SizeLimit` wired in `Program.cs:16-17`; tested by T-12. |
+| FR-8 (single-flight) | Covered | `_inFlight.GetOrAdd` per key → one shared `Lazy<Task<object?>>`; 20 concurrent requests = 1 upstream call (T-5). |
+| FR-9 (no failure caching) | Covered | Faulted/cancelled results not stored; next request retries (T-6). |
+| EC-1 (skip null/deleted/dead/non-story) | Covered | `BestStoriesService.cs:67-71`; T-3. |
+| EC-2 (`uri` null when no `url`) | Covered | `MapToResponse` passes `item.Url` through (`BestStoriesService.cs:76-86`); T-4. |
+| EC-3 (upstream unreachable → 502/503) | Covered | `StoriesEndpoints.cs:38-52`; `HttpRequestException` → 502, `TaskCanceledException` + `TimeoutException` → 503; `ProblemDetails` with no stack trace. T-10. |
+| EC-4 (fewer valid stories than n) | Covered | null items filtered out; fewer returned than `n` (T-7). |
+| Section 3 (API contract unchanged) | Covered | Endpoint, response shape and order unchanged; T-8 covers schema + order. |
+| Section 7 (config key) | Covered | `Stories:MaxCacheEntries` in `appsettings.json:18`, read from `StoriesOptions` (`StoriesOptions.cs:21-22`). |
+| OPS-2 (`/health` → 200) | Covered | `Program.cs:49` + T-11. |
+| OPS-3 (OpenAPI in Development) | Covered | `Program.cs:44-47`. |
+| T-1…T-7 (unit contract) | Covered | `BestStoriesServiceTests.cs` (T-1…T-7). |
+| T-8…T-12 (integration contract + SizeLimit) | Covered | `StoriesEndpointIntegrationTests.cs` (T-8…T-12). |
+| T-13 (boundedness/eviction) | Dropped with reason | Spec §8 - runtime evicts on memory pressure, not synchronously on `Set`; T-12 alone covers `SizeLimit` wiring. |
+| Section 10 (files changed) | Covered | All files modified/added and committed; README, spec, plan, review, test project, source, config. |
 
 ## Findings
 
 ### Blocker
 
-1. **`IMemoryCache.SizeLimit` is never configured - the spec's main design driver is missing (NFR-2, NFR-2a, FR-7b).** `Program.cs:13` registers `builder.Services.AddMemoryCache()` with default options, and neither `MemoryCacheOptions` nor `SizeLimit` appears anywhere in `src/` or `tests/`. Consequently:
-   - the entry cap described in spec lines 13, 43 and 74 (`SizeLimit = StoriesOptions.MaxCacheEntries`, default 1000) is not enforced;
-   - `StoriesOptions.MaxCacheEntries` (`StoriesOptions.cs:22`) is dead configuration - it violates "No dead code" and the Options rule that configuration must actually drive behaviour;
-   - without `SizeLimit`, the memory-pressure claim (NFR-2d) has no capacity target, so the only real eviction path is TTL expiry.
-   The spec exists precisely to bound the singleton cache; as shipped, the bounded-capacity guarantee (`plan.md:12`, `plan.md:45`) does not hold. Fix: configure the cache at startup, e.g. `AddMemoryCache(o => o.SizeLimit = ...)` reading `IOptions<StoriesOptions>` (or `PostConfigure<MemoryCacheOptions>`), then re-run the suite.
+None. `SizeLimit` wiring and all functional/contract requirements are implemented and covered by tests; `dotnet build` and `dotnet test` are clean.
 
 ### Major
 
-1. **README not updated although configuration and internal behaviour changed (Definition of Done).**
-   - The configuration table (`README.md:54-59`) lists all other `Stories:*` keys but not `Stories:MaxCacheEntries`.
-   - The Design decisions bullet (`README.md:128`) still describes the old design: "a small `SingleFlightCache` (`ConcurrentDictionary` of `Lazy<Task<T>>` entries with absolute expiry)" - storage is now `IMemoryCache`; the `ConcurrentDictionary` only coordinates in-flight tasks.
-   - The project-structure tree shows only `specs/001-best-stories-api/` and omits `specs/002-implement-imemorycache/`.
-2. **`plan.md` contradicts the implementation and tasks are ticked anyway.** `plan.md:12` and `plan.md:45` state the cache is "Bounded by `StoriesOptions.MaxCacheEntries`" and task 3 ("Wire ... into DI") is checked `[x]`, but the bound was never wired. Engineering rules section 2.5 require updating `plan.md` first when implementation diverges; task 5's claim (`dotnet build` clean, 17 tests pass) is true but gives a false impression of completeness.
-3. **Feature work is uncommitted.** `git status` shows the five modified files plus untracked `specs/002-implement-imemorycache/`, while `spec.md` says `Status: Shipped`. The Git rule (small Conventional Commits referencing the feature folder, as done for 001) is not satisfied.
+- **Implementation is not fully committed.** The working tree shows three source changes still on disk and uncommitted (only `Program.cs` landed in commit `ebc91ce`):
+  - `src/HackerNews.BestStories.Api/Infrastructure/SingleFlightCache.cs`
+  - `src/HackerNews.BestStories.Api/Options/StoriesOptions.cs`
+  - `src/HackerNews.BestStories.Api/appsettings.json`
+  - `git log` shows `94dd4db (spec)`, `fab348a (test)`, `81e96e9 (docs)`, `ebc91ce (Program.cs)`, but none of the three files above was added/committed in any commit.
+
+  This is the same gap flagged as Major 3 in the earlier review, and it makes `Status: Shipped` in `spec.md` inaccurate until the tree is committed. Fix: `git add` the three files and commit, e.g. `feat: wire IMemoryCache.SizeLimit from StoriesOptions and make the cache bounded`, referencing `Spec: 002-implement-imemorycache`.
 
 ### Minor
 
-1. **Misleading comment on removal semantics.** `SingleFlightCache.cs:55-58` claims "the comparison uses the exact Lazy we observed, so it is only removed if it is still the current entry", but `_inFlight.TryRemove(key, out lazy)` is the unconditional `ConcurrentDictionary.TryRemove(TKey, out TValue)` overload - it removes whatever value is present. Practical impact is limited (it may evict a newer in-flight entry, causing at most one extra upstream call, never a wrong result), but a "why" comment must be accurate. If value comparison is intended, use the `TryRemove(KeyValuePair<TKey, TValue>)` overload.
-2. **Redundant qualification.** `Program.cs:34` writes the factory with the fully qualified `Microsoft.Extensions.Caching.Memory.IMemoryCache` although `using Microsoft.Extensions.Caching.Memory;` already exists at line 6; the line is also unnecessarily long for a thin `Program.cs`.
-3. **Unused `NSubstitute` package (carried over from 001).** `HackerNews.BestStories.Api.Tests.csproj:10` still references `NSubstitute 6.2.0`; spec line 96 says the unused *import* was removed, but no test uses the library at all - violates "no unnecessary NuGet packages".
-4. **README mojibake (carried over from 001).** The Design decisions and Testing sections still contain broken em-dash artifacts; re-save the README as UTF-8.
+- **README whitespace**: `## Testing` follows `## Enhancements given more time` with two blank lines; single blank line is conventional (`README.md`, between the two headings).
+- **README NFR-2d wording**: the Design decisions bullet says LRU/expiry handled by the framework but does not state that memory-pressure compaction relies on the `MemoryCache` default `CompactionPercentage` (0.9). Add a short clause for accuracy.
+- **`MemoryCacheStatistics` not surfaced**: `CacheResult<T>` and the cache exist, but the `MemoryCacheStatistics` counters are never exposed. Listed as an enhancement; no action required.
 
-### Suggestions
+### Suggestions (from the earlier review, already addressed)
 
-1. After wiring `SizeLimit`, add one test asserting `MemoryCacheOptions.SizeLimit == StoriesOptions.MaxCacheEntries` (and optionally that entries with `Size = 1` are evicted past the limit). Spec section 8 waived new tests, but the central NFR deserves direct coverage.
-2. Mention cache eviction/size observability (`MemoryCacheStatistics`) in the README "Enhancements given more time" list - it is already implied by spec section 9 but not by the README.
-3. Consider `builder.Services.AddMemoryCache(...)` with an inline lambda over `IOptions<StoriesOptions>` instead of a hand-built factory lambda for the singleton registration; it would read cleaner than `Program.cs:34`.
+- T-12 size-limit wiring test added and passing - resolved.
+- README "Enhancements given more time" lists `MemoryCacheStatistics` counters - resolved.
+- `Program.cs` kept as `AddOptions<MemoryCacheOptions>().Configure<IOptions<StoriesOptions>>(...)` rather than an inline lambda - a deliberate choice to keep the composition root thin and readable; minor and accepted.
 
 ## What is done well
 
-- The single-flight logic was ported correctly and is arguably better than before: the fast path goes straight to `IMemoryCache` (`SingleFlightCache.cs:39-42`), each caller awaits the shared task through its own `WaitAsync(cancellationToken)` (`SingleFlightCache.cs:50`), so one caller's cancellation no longer fails concurrent waiters - this also resolves Minor 3 from the 001 review.
-- The test strategy decision is sound: rejecting `Substitute.For<IMemoryCache>()` in favour of a real `MemoryCache` (`BestStoriesServiceTests.cs:32`) because a substitute never stores values and would silently break T-5.
-- No new NuGet packages - `IMemoryCache` comes from the shared framework; the production project still references only `Microsoft.AspNetCore.OpenApi`.
-- Options pattern kept with `[Range]` validation and `ValidateOnStart` (`StoriesOptions.cs`, `Program.cs:21-25`); TTLs and the new limit are configuration-driven, no magic numbers (documented `Size = 1` excepted and justified in the spec).
-- `CacheResult<T>` remains a `record`, `CancellationToken` is still passed through every layer, and the public API contract is untouched - the full 17-test suite, including the integration tests, passes with a clean build.
+- Single-flight ported correctly and arguably improved: the fast path goes straight to `IMemoryCache` (`SingleFlightCache.cs:39-42`), each caller awaits the shared task independently (`SingleFlightCache.cs:50-51`), so one caller's cancellation no longer fails concurrent waiters.
+- Test strategy is sound: real `MemoryCache` is used instead of `Substitute.For<IMemoryCache>()` because a substitute never stores values and would silently break T-5.
+- No extra NuGet packages - production project references only `Microsoft.AspNetCore.OpenApi`; the `NSubstitute` reference that existed in 001 was removed.
+- Options pattern kept with `[Range]` validation and `ValidateOnStart` - no magic numbers.
+- `CacheResult<T>` is a `record`, `CancellationToken` passes through every layer, and the public contract is untouched; the full 18-test suite including integration tests passes against the new `IMemoryCache`-backed implementation with a clean build.
