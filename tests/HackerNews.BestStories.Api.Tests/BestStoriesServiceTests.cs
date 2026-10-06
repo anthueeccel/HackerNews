@@ -4,6 +4,7 @@ using HackerNews.BestStories.Api.Models;
 using HackerNews.BestStories.Api.Options;
 using HackerNews.BestStories.Api.Services;
 using HackerNews.BestStories.Api.Tests.Support;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -28,7 +29,7 @@ public class BestStoriesServiceTests
     private static BestStoriesService CreateService(IHackerNewsClient client) =>
         new(
             client,
-            new SingleFlightCache(),
+            new SingleFlightCache(new MemoryCache(new MemoryCacheOptions())),
             Microsoft.Extensions.Options.Options.Create(new StoriesOptions()),
             NullLogger<BestStoriesService>.Instance);
 

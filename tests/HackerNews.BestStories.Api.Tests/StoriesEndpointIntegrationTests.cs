@@ -5,9 +5,11 @@ using HackerNews.BestStories.Api.Tests.Support;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace HackerNews.BestStories.Api.Tests;
@@ -182,5 +184,24 @@ public class StoriesEndpointIntegrationTests
         using var response = await client.GetAsync("/health");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    // T-12 (review finding — FR-7b / NFR-2a): the cache size limit must be applied from
+    // configuration (Stories:MaxCacheEntries), not hardcoded. Every entry has Size = 1.
+    [Test]
+    public void GetBestStories_SizeLimit_EqualsMaxCacheEntriesFromConfiguration()
+    {
+        const int expectedSizeLimit = 42;
+
+        var factory = new TestApiFactory(CreateHandler([1]))
+            .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration(
+                (_, config) => config.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["Stories:MaxCacheEntries"] = "42" })));
+
+        using var scope = factory.Services.CreateScope();
+        var sizeLimit = scope.ServiceProvider
+            .GetRequiredService<IOptions<MemoryCacheOptions>>().Value.SizeLimit;
+
+        Assert.That(sizeLimit, Is.EqualTo(expectedSizeLimit));
     }
 }
