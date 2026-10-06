@@ -3,12 +3,18 @@ using HackerNews.BestStories.Api.Endpoints;
 using HackerNews.BestStories.Api.Infrastructure;
 using HackerNews.BestStories.Api.Options;
 using HackerNews.BestStories.Api.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+builder.Services
+    .AddMemoryCache()
+    .AddOptions<MemoryCacheOptions>()
+    .Configure<IOptions<StoriesOptions>>((cacheOptions, storiesOptions) =>
+        cacheOptions.SizeLimit = storiesOptions.Value.MaxCacheEntries);
 
 builder.Services
     .AddOptions<HackerNewsOptions>()
@@ -30,6 +36,7 @@ builder.Services.AddHttpClient<IHackerNewsClient, HackerNewsClient>((services, h
 });
 
 builder.Services.AddSingleton<SingleFlightCache>();
+
 builder.Services.AddScoped<IBestStoriesService, BestStoriesService>();
 
 var app = builder.Build();
