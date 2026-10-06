@@ -58,6 +58,8 @@ it is excluded from the default offline test run and is executed as a separate s
 | `Stories:IdListTtlSeconds`  | `120`                                    | Cache TTL for the best-story ID list |
 | `Stories:ItemTtlSeconds`    | `600`                                    | Cache TTL for each story item        |
 
+| `Stories:MaxCacheEntries` | `1000` | Maximum cache entry count for the `IMemoryCache` backing store (every entry is registered with `Size = 1`) |
+
 All options are validated at startup; invalid values fail fast.
 
 ## Project structure
@@ -125,7 +127,7 @@ HackerNews/
 ## Design decisions
 
 - **Single project** (`src/HackerNews.BestStories.Api`) plus one test project. For a service this small, project separation adds ceremony without value; separation of concerns is expressed with folders and interfaces (`Clients/`, `Services/`, `Endpoints/`, `Models/`, `Options/`). In a larger system it would split into Domain/Application/Infrastructure projects.
-- **Caching and single-flight**: a small `SingleFlightCache` (`ConcurrentDictionary` of `Lazy<Task<T>>` entries with absolute expiry). Concurrent requests for the same key share one upstream call; only successfully completed results are kept, so a failed or cancelled upstream call is retried on the next request.
+- **Caching and single-flight**: the `SingleFlightCache` is backed by `IMemoryCache` — the cache is bounded by `Stories:MaxCacheEntries` (`SizeLimit`), every entry is registered with `Size = 1`, and expiry/LRU eviction are managed by the framework. A `ConcurrentDictionary<string, Lazy<Task<T>>>` keeps one shared upstream call per key, so concurrent requests for the same key trigger exactly one upstream call; a failed or cancelled call is never stored and is retried on the next request.
 - **Bounded parallelism**: items are fetched with `Parallel.ForEachAsync` capped by `Stories:Parallelism` — never an unbounded fan-out over all IDs.
 - **TTLs, timeout, max `n` and parallelism are all configuration**, no magic numbers in code.
 - **Typed client** through `IHttpClientFactory` (`HackerNewsClient`), no retry/circuit-breaker library in this version.
@@ -139,11 +141,12 @@ HackerNews/
 
 ## Enhancements given more time
 
-Redis or another distributed cache, Polly retries and circuit breaker, rate limiting on this API, background cache refresh (`BackgroundService`), OpenTelemetry metrics and tracing, splitting into Domain/Application/Infrastructure projects, contract tests against the upstream shape, and authentication.
+Redis or another distributed cache, Polly retries and circuit breaker, rate limiting on this API, background cache refresh (`BackgroundService`), OpenTelemetry metrics and tracing, splitting into Domain/Application/Infrastructure projects, contract tests against the upstream shape, authentication, and cache size observability (`MemoryCacheStatistics` counters).
+
 
 ## Testing
 
-Tests use **NUnit** with the constraint model. Unit tests cover the service with a faked `IHackerNewsClient`; integration tests use `WebApplicationFactory` with a fake `HttpMessageHandler` — no real network calls are ever made.
+Tests use **NUnit** with the constraint model. Unit tests cover the service with a faked `IHackerNewsClient`; integration tests use `WebApplicationFactory` with a fake `HttpMessageHandler` — no real network calls are ever made except the separate E2E test (`BestStoriesE2ETests`), which calls the real Hacker News API. One integration test additionally asserts that the `IMemoryCache` size limit is wired from configuration (`Stories:MaxCacheEntries` → `MemoryCacheOptions.SizeLimit`).
 
 ## How this was built
 
