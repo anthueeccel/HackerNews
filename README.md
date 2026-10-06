@@ -3,6 +3,7 @@
 # HackerNews Best Stories API
 
 A RESTful API built with ASP.NET Core (Minimal API, .NET 10) that returns the details of the best `n` Hacker News stories, ordered by score descending. It protects the upstream [Hacker News API](https://github.com/HackerNews/API) from load with in-memory caching, single-flight request coalescing, and bounded parallelism.
+**Repository**: https://github.com/anthueeccel/HackerNews 
 
 ## Endpoint
 
