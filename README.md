@@ -58,7 +58,6 @@ it is excluded from the default offline test run and is executed as a separate s
 | `Stories:Parallelism`       | `10`                                     | Max concurrent upstream item fetches |
 | `Stories:IdListTtlSeconds`  | `120`                                    | Cache TTL for the best-story ID list |
 | `Stories:ItemTtlSeconds`    | `600`                                    | Cache TTL for each story item        |
-
 | `Stories:MaxCacheEntries` | `1000` | Maximum cache entry count for the `IMemoryCache` backing store (every entry is registered with `Size = 1`) |
 
 All options are validated at startup; invalid values fail fast.
@@ -80,7 +79,11 @@ HackerNews/
 ├── docs/
 │   └── ai-prompt.md                      # "How this was built" note
 ├── specs/
-│   └── 001-best-stories-api/
+│   ├── 001-best-stories-api/
+│   │   ├── spec.md                       # What and why (source of truth)
+│   │   ├── plan.md                       # How, plus task checklist
+│   │   └── review.md                     # Review workflow output
+|   └── 002-implement-imemorycache/
 │       ├── spec.md                       # What and why (source of truth)
 │       ├── plan.md                       # How, plus task checklist
 │       └── review.md                     # Review workflow output
@@ -151,4 +154,4 @@ Tests use **NUnit** with the constraint model. Unit tests cover the service with
 
 ## How this was built
 
-This project was built with AI assistance (Cline in VS Code) using a spec-driven workflow. See [`docs/ai-prompt.md`](docs/ai-prompt.md) and the [`specs/`](specs/001-best-stories-api/spec.md) folder for the spec and plan.
+This project was built with AI assistance (Cline in VS Code) using a spec-driven workflow. See [`docs/ai-prompt.md`](docs/ai-prompt.md) and the [`spec-001/`](specs/001-best-stories-api/spec.md) or [`spec-002/`](specs/002-implement-imemorycache/spec.md) folder for the spec and plan.
